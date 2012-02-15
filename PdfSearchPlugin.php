@@ -13,8 +13,8 @@ class PdfSearchPlugin extends Omeka_Plugin_Abstract
     const ELEMENT_SET_NAME = 'PDF Search';
     const ELEMENT_NAME = 'Text';
     
-    protected $_hooks = array('install', 'uninstall', 'after_save_item', 
-                              'after_delete_file');
+    protected $_hooks = array('install', 'uninstall', 'config_form', 'config', 
+                              'after_save_item', 'after_delete_file');
     
     protected $_pdfMimeTypes = array('application/pdf', 'application/x-pdf', 
                                      'application/acrobat', 'text/x-pdf', 
@@ -55,11 +55,46 @@ class PdfSearchPlugin extends Omeka_Plugin_Abstract
     }
     
     /**
+     * Display the plugin config form.
+     */
+    public function hookConfigForm()
+    {
+?>
+<div class="field">
+    <label for="save_pdf_texts">Process existing PDF files</label>
+    <div class="inputs">
+        <?php echo __v()->formCheckbox('extract_pdf_texts'); ?>
+    </div>
+    <p class="explanation">This plugin enables searching on PDF files by 
+    extracting their texts and saving them to their parent items. This normally 
+    happens automatically, but there are times when you'll want to extract text 
+    from all PDF files that exist in your Omeka archive; for example, when first 
+    installing this plugin and when items are being created by other plugins. 
+    Check the above box and submit this form to run the text extraction process, 
+    which may take some time to finish.</p>
+</div>
+<?php
+    }
+    
+    /**
+     * Process the plugin config form.
+     */
+    public function hookConfig()
+    {
+        // Run the text extraction process if directed to do so.
+        if ($_POST['extract_pdf_texts']) {
+            ProcessDispatcher::startProcess('PdfSearchProcess');
+        }
+    }
+    
+    /**
      * Refresh PDF texts to account for an item save.
      */
     public function hookAfterSaveItem($item)
     {
-        $this->_saveText($item);
+        $elementId = $this->getPdfSearchElementId();
+        $recordTypeId = $this->getItemRecordTypeId();
+        $this->saveItemPdfText($item, $elementId, $recordTypeId);
     }
     
     /**
@@ -68,45 +103,86 @@ class PdfSearchPlugin extends Omeka_Plugin_Abstract
     public function hookAfterDeleteFile($file)
     {
         $item = $file->getItem();
-        $this->_saveText($item);
+        $elementId = $this->getPdfSearchElementId();
+        $recordTypeId = $this->getItemRecordTypeId();
+        $item->deleteElementTextsByElementId(array($elementId));
+        $this->saveItemPdfText($item, $elementId, $recordTypeId);
     }
     
     /**
-     * Extract texts from PDF files and save them to the parent item.
+     * Extract texts from all PDF files belonging to an item.
+     * 
+     * @param Item $item
+     * @param int $elementId The ID of the "PDF Search::Text" element.
+     * @param int $recordTypeId The ID of the Item record type.
      */
-    protected function _saveText(Item $item)
+    public function saveItemPdfText(Item $item, $elementId, $recordTypeId)
     {
-        $element = $item->getElementByNameAndSetName(self::ELEMENT_NAME, self::ELEMENT_SET_NAME);
-        $recordTypeId = $this->_db->getTable('RecordType')->findIdFromName('item');
-        
-        // Delete PDF Search element texts. This is not needed when saving an 
-        // item because that process automatically deletes all element texts 
-        // belonging to the item. Deleting a file does not automatically delete 
-        // element texts.
-        $item->deleteElementTextsByElementId(array($element->id));
-        
-        // Iterate the files.
+        // Iterate all files belonging to this item.
         foreach ($item->Files as $file) {
-            
-            // Ignore all other file types.
-            if (!in_array($file->mime_browser, $this->_pdfMimeTypes)) {
-                continue;
-            }
-            
-            // Extract the text.
-            $path = escapeshellarg(FILES_DIR . '/' . $file->archive_filename);
-            $cmd = "pdftotext $path -";
-            $text = shell_exec($cmd);
-            
-            // Save the text.
-            $textRecord = new ElementText;
-            $textRecord->record_id = $item->id;
-            $textRecord->element_id = $element->id;
-            $textRecord->record_type_id = $recordTypeId;
-            $textRecord->text = $text;
-            $textRecord->html = false;
-            $textRecord->save();
+            $this->saveFilePdfText($file, $elementId, $recordTypeId);
         }
+    }
+    
+    /**
+     * Extract text from a PDF file and save it to the parent item.
+     * 
+     * @param File $file
+     * @param int $elementId The ID of the "PDF Search::Text" element.
+     * @param int $recordTypeId The ID of the Item record type.
+     */
+    public function saveFilePdfText(File $file, $elementId, $recordTypeId)
+    {
+        // Ignore non-PDF files.
+        if (!in_array($file->mime_browser, $this->_pdfMimeTypes)) {
+            return;
+        }
+        
+        // Save the PDF text.
+        $textRecord = new ElementText;
+        $textRecord->record_id = $file->item_id;
+        $textRecord->element_id = $elementId;
+        $textRecord->record_type_id = $recordTypeId;
+        $textRecord->text = $this->extractPdfText($file);
+        $textRecord->html = false;
+        $textRecord->save();
+    }
+    
+    /**
+     * Extract text from a PDF file and return it.
+     * 
+     * @param File $file
+     * @return string
+     */
+    public function extractPdfText($file)
+    {
+        $path = escapeshellarg(FILES_DIR . '/' . $file->archive_filename);
+        $cmd = "pdftotext $path -";
+        return shell_exec($cmd);
+    }
+    
+    /**
+     * Get the ID of the "PDF Search:Text" element.
+     * 
+     * @return int
+     */
+    public function getPdfSearchElementId()
+    {
+        // Must create an arbitrary record to access 
+        // ActsAsElementText::getElementByNameAndSetName.
+        $item = new Item;
+        return $item->getElementByNameAndSetName(self::ELEMENT_NAME, 
+                                                 self::ELEMENT_SET_NAME)->id;
+    }
+    
+    /**
+     * Get the ID of the Item record type.
+     * 
+     * @return int
+     */
+    public function getItemRecordTypeId()
+    {
+        return get_db()->getTable('RecordType')->findIdFromName('item');
     }
     
     /**
