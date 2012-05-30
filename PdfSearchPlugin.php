@@ -192,12 +192,24 @@ class PdfSearchPlugin extends Omeka_Plugin_Abstract
      * the plugin overwrites any form submitted data. Form elements with the 
      * disabled attribute will not be submitted.
      */
-    public static function disablePdfSearchText($html, $inputNameStem, $value)
+    public static function disableForm($html, $inputNameStem, $value)
     {
         ob_start();
 ?>
 <textarea name="<?php echo $inputNameStem; ?>[text]" class="textinput" rows="15" cols="50" disabled><?php echo $value; ?></textarea>
 <?php
         return ob_get_clean();
+    }
+    
+    /**
+     * Disable the PDF Search Text display.
+     * 
+     * The text extracted from PDFs tends to be poorly formatted and unfit for 
+     * display on item show pages. This removes the entire element set section 
+     * if show_item_metadata() is configured show_empty_elements = false.
+    */
+    public static function disableDisplay($text, $record, $elementText)
+    {
+        return '';
     }
 }
