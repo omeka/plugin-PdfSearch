@@ -202,7 +202,7 @@ class PdfSearchPlugin extends Omeka_Plugin_Abstract
     }
     
     /**
-     * Disable the PDF Search Text display.
+     * Disable the PDF Search Text display on the public theme.
      * 
      * The text extracted from PDFs tends to be poorly formatted and unfit for 
      * display on item show pages. This removes the entire element set section 
@@ -210,6 +210,9 @@ class PdfSearchPlugin extends Omeka_Plugin_Abstract
     */
     public static function disableDisplay($text, $record, $elementText)
     {
-        return '';
+        if (!is_admin_theme()) {
+            $text = '';
+        }
+        return $text;
     }
 }
