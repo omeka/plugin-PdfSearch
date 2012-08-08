@@ -194,11 +194,12 @@ class PdfSearchPlugin extends Omeka_Plugin_Abstract
      */
     public static function disableForm($html, $inputNameStem, $value)
     {
-        ob_start();
-?>
-<textarea name="<?php echo $inputNameStem; ?>[text]" class="textinput" rows="15" cols="50" disabled><?php echo $value; ?></textarea>
-<?php
-        return ob_get_clean();
+        return __v()->formTextarea($inputNameStem . '[text]', 
+                                   $value, 
+                                   array('disabled' => 'disabled', 
+                                         'class' => 'textinput', 
+                                         'rows' => 15, 
+                                         'cols' => 50));
     }
     
     /**
